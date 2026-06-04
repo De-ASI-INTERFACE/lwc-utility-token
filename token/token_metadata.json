@@ -1,0 +1,34 @@
+{
+  "name": "Linework Coin",
+  "symbol": "LWC",
+  "description": "Utility and governance token for the DeASI ecosystem — AMM fees, staking, governance, API access, market-making.",
+  "image": "https://raw.githubusercontent.com/De-ASI-INTERFACE/lwc-utility-token/Richy/token/lwc_logo.png",
+  "creator": "Richard Patterson (@De-ASI-INTERFACE)",
+  "organization": "@DeASI-INTERFACE @QuantumTradingInfinity @richy.ai",
+  "launch_date": "April 2025",
+  "blockchain": "Solana",
+  "standard": "SPL",
+  "decimals": 9,
+  "total_supply": 21000000,
+  "mint_authority": "revoked",
+  "freeze_authority": "revoked",
+  "utility": [
+    "AMM fee settlement (rp_spl_amm_platform_v1)",
+    "Staking rewards — fee share + emissions",
+    "Governance voting — 1 LWC = 1 vote, time-weighted multipliers",
+    "DeASI AI API access tier gating",
+    "Buyback-and-burn — 30% of protocol revenue"
+  ],
+  "allocation": {
+    "community_ecosystem": "35%",
+    "liquidity_mm_reserve": "20%",
+    "team_advisors": "15%",
+    "public_sale": "15%",
+    "treasury_dev": "15%"
+  },
+  "links": {
+    "github": "https://github.com/De-ASI-INTERFACE/lwc-utility-token",
+    "amm": "https://github.com/De-ASI-INTERFACE/rp_spl_amm_platform_v1",
+    "trading_bot": "https://github.com/De-ASI-INTERFACE/trading-bot"
+  }
+}
