@@ -1,139 +1,87 @@
-"""LWC Staking Engine
-
+"""LWC Staking Engine — memory-optimized, fully iterative.
+Uses dict + deque for O(1) lookups. Zero recursion.
 Creator: Richard Patterson (@De-ASI-INTERFACE)
-Orgs:    @DeASI-INTERFACE | @QuantumTradingInfinity | @richy.ai
-Purpose: Memory-efficient, iterative staking engine for LWC.
-         Manages stake positions, time-weighted voting power, and reward accrual.
-
-Design:
-  - Flat dict-based registry — O(1) lookup, no tree traversal, no recursion
-  - Generators used for all bulk reads to avoid materializing large lists
-  - Time-weighted power multipliers: 30d=1.25x, 90d=1.5x, 180d+=2x
 """
+from __future__ import annotations
+
 import time
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, Generator, Optional
+from typing import Deque
 from loguru import logger
 
 
 @dataclass
 class StakePosition:
-    wallet:               str
-    amount:               float
-    staked_at:            float = field(default_factory=time.time)
-    lock_seconds:         int   = 0
-    accumulated_rewards:  float = 0.0
-
-    @property
-    def unlock_ts(self) -> float:
-        return self.staked_at + self.lock_seconds
-
-    @property
-    def is_unlocked(self) -> bool:
-        return time.time() >= self.unlock_ts
-
-    @property
-    def lock_days(self) -> float:
-        return self.lock_seconds / 86_400
-
-    @property
-    def power_multiplier(self) -> float:
-        """Time-weighted multiplier based on lock duration."""
-        d = self.lock_days
-        if d >= 180:
-            return 2.0
-        if d >= 90:
-            return 1.5
-        if d >= 30:
-            return 1.25
-        return 1.0
-
-    @property
-    def voting_power(self) -> float:
-        return self.amount * self.power_multiplier
+    wallet: str
+    amount_lwc: float
+    locked_until: float  # unix timestamp
+    multiplier: float = 1.0
+    entered_at: float = field(default_factory=time.time)
 
 
-# Flat in-memory registry — replace with on-chain PDA reads in production
-_REGISTRY: Dict[str, StakePosition] = {}
+class StakingEngine:
+    """Manages LWC staking positions with O(1) wallet lookups."""
 
+    def __init__(self) -> None:
+        self._positions: dict[str, StakePosition] = {}
+        self._event_log: Deque[dict] = deque(maxlen=10_000)
+        self._total_staked: float = 0.0
 
-def stake(wallet: str, amount: float, lock_seconds: int = 0) -> StakePosition:
-    """Open or add to a stake position."""
-    if amount <= 0:
-        raise ValueError(f"[Staking] Amount must be positive, got {amount}")
-    if wallet in _REGISTRY:
-        # Top-up existing position without resetting lock
-        _REGISTRY[wallet].amount += amount
-        pos = _REGISTRY[wallet]
-    else:
-        pos = StakePosition(wallet=wallet, amount=amount, lock_seconds=lock_seconds)
-        _REGISTRY[wallet] = pos
-    logger.info(
-        f"[Staking] {wallet[:8]}... staked {amount:.2f} LWC "
-        f"(total={pos.amount:.2f}, lock={pos.lock_days:.0f}d, power={pos.voting_power:.2f})"
-    )
-    return pos
+    def stake(self, wallet: str, amount: float, lock_days: int = 0) -> bool:
+        """Add or increase a staking position."""
+        if amount <= 0:
+            logger.warning(f"Invalid stake amount: {amount}")
+            return False
 
+        lock_seconds = lock_days * 86_400
+        multiplier = 1.0 + (lock_days / 365) * 0.5  # 50% bonus APY boost per year locked
 
-def unstake(wallet: str) -> float:
-    """Close a stake position and return amount if lock expired."""
-    pos = _REGISTRY.get(wallet)
-    if pos is None:
-        raise KeyError(f"[Staking] No position for {wallet[:8]}...")
-    if not pos.is_unlocked:
-        remaining = int(pos.unlock_ts - time.time())
-        raise PermissionError(f"[Staking] Still locked for {remaining}s")
-    amount = pos.amount
-    del _REGISTRY[wallet]
-    logger.info(f"[Staking] {wallet[:8]}... unstaked {amount:.2f} LWC")
-    return amount
+        if wallet in self._positions:
+            pos = self._positions[wallet]
+            pos.amount_lwc += amount
+            pos.locked_until = max(pos.locked_until, time.time() + lock_seconds)
+            pos.multiplier = multiplier
+        else:
+            self._positions[wallet] = StakePosition(
+                wallet=wallet,
+                amount_lwc=amount,
+                locked_until=time.time() + lock_seconds,
+                multiplier=multiplier,
+            )
 
+        self._total_staked += amount
+        self._event_log.append({"event": "stake", "wallet": wallet, "amount": amount, "ts": time.time()})
+        logger.info(f"Staked {amount} LWC for {wallet} (multiplier={multiplier:.2f}x)")
+        return True
 
-def get_power(wallet: str) -> float:
-    """Return voting power for a wallet (0.0 if not staked)."""
-    pos = _REGISTRY.get(wallet)
-    return pos.voting_power if pos else 0.0
+    def unstake(self, wallet: str) -> float:
+        """Remove a staking position if unlock time has passed."""
+        pos = self._positions.get(wallet)
+        if pos is None:
+            logger.warning(f"No stake found for {wallet}")
+            return 0.0
+        if time.time() < pos.locked_until:
+            remaining = pos.locked_until - time.time()
+            logger.warning(f"{wallet} locked for {remaining:.0f}s more")
+            return 0.0
 
+        amount = pos.amount_lwc
+        del self._positions[wallet]
+        self._total_staked -= amount
+        self._event_log.append({"event": "unstake", "wallet": wallet, "amount": amount, "ts": time.time()})
+        logger.info(f"Unstaked {amount} LWC for {wallet}")
+        return amount
 
-def total_staked() -> float:
-    """Sum of all staked amounts — iterative, no recursion."""
-    total = 0.0
-    for pos in _REGISTRY.values():
-        total += pos.amount
-    return total
+    def get_position(self, wallet: str) -> StakePosition | None:
+        return self._positions.get(wallet)
 
+    def total_staked(self) -> float:
+        return self._total_staked
 
-def total_voting_power() -> float:
-    """Sum of all time-weighted voting power."""
-    power = 0.0
-    for pos in _REGISTRY.values():
-        power += pos.voting_power
-    return power
-
-
-def iter_positions() -> Generator[StakePosition, None, None]:
-    """Memory-safe generator over all active stake positions."""
-    for pos in _REGISTRY.values():
-        yield pos
-
-
-def distribute_rewards(total_reward_pool: float) -> Dict[str, float]:
-    """
-    Distribute reward pool proportionally by voting power.
-    Iterative — no recursion. Returns dict of wallet -> reward.
-    """
-    total_power = total_voting_power()
-    if total_power == 0:
-        logger.warning("[Staking] No staked LWC — rewards not distributed")
-        return {}
-
-    rewards: Dict[str, float] = {}
-    for pos in iter_positions():
-        share = pos.voting_power / total_power
-        reward = total_reward_pool * share
-        pos.accumulated_rewards += reward
-        rewards[pos.wallet] = reward
-        logger.debug(f"[Staking] Reward {pos.wallet[:8]}...: {reward:.4f} LWC ({share*100:.2f}%)")
-
-    logger.info(f"[Staking] Distributed {total_reward_pool:.4f} LWC across {len(rewards)} stakers")
-    return rewards
+    def top_stakers(self, n: int = 10) -> list[StakePosition]:
+        """Return top n stakers by amount — iterative sort."""
+        sorted_positions: list[StakePosition] = sorted(
+            self._positions.values(), key=lambda p: p.amount_lwc, reverse=True
+        )
+        return sorted_positions[:n]
