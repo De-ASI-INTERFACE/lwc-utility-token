@@ -1,0 +1,51 @@
+name: LWC Token Solana Audit
+
+on:
+  push:
+    branches: [Richy]
+  pull_request:
+    branches: [Richy]
+
+jobs:
+  audit:
+    name: Token Audit Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install loguru aiohttp redis prometheus-client
+      - run: python scripts/audit.py --path . --output reports/audit.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lwc-token-audit
+          path: reports/audit.md
+
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: HEAD~1
+          head: HEAD
+          extra_args: --only-verified
+
+  lint:
+    name: Security Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install flake8 bandit
+      - run: |
+          for dir in token staking marketmaking amm api; do
+            [ -d "$dir" ] && flake8 $dir/ --max-line-length=120 --ignore=E501 || true
+          done
+      - run: bandit -r . -ll --exclude ./.git,./venv,./docs 2>/dev/null || true
