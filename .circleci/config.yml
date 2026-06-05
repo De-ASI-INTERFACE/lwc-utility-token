@@ -7,36 +7,42 @@ jobs:
   audit:
     docker:
       - image: cimg/python:3.11
+    resource_class: small
     steps:
       - checkout
       - python/install-packages:
           pkg-manager: pip
           packages: bandit safety flake8
+          cache-version: v2
       - run:
           name: Lint (flake8)
-          command: flake8 . --max-line-length=120 --exclude=venv,.venv,target
+          command: flake8 . --max-line-length=120 --exclude=venv,.venv,__pycache__,target
       - run:
           name: Security Audit (bandit)
-          command: bandit -r . -x venv,.venv,target -ll
+          command: bandit -r . -x venv,.venv,__pycache__,target -ll
       - run:
-          name: Dependency Vulnerability Scan (safety)
+          name: Dependency CVE Scan (safety)
           command: safety check -r requirements.txt
 
   test:
     docker:
       - image: cimg/python:3.11
       - image: cimg/redis:7.0
+    resource_class: small
     steps:
       - checkout
       - python/install-packages:
           pkg-manager: pip
           packages: pytest pytest-asyncio aiohttp redis
+          cache-version: v2
       - run:
-          name: Run Tests
-          command: pytest tests/ -v --tb=short
+          name: Run Async Test Suite
+          command: pytest tests/ -v --tb=short --asyncio-mode=auto
 
 workflows:
-  audit-and-test:
+  audit-then-test:
     jobs:
       - audit
-      - test
+      - test:
+          requires:
+            - audit
