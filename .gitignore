@@ -1,36 +1,28 @@
-# LWC Utility Token — .gitignore
-# Creator: Richard Patterson (@De-ASI-INTERFACE)
-
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 .Python
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Env
 .env
-.venv
-env/
+.env.*
 venv/
+.venv/
 
-# Solana keypairs — NEVER commit
-*.json
-!token/token_metadata.json
-!amm/amm_config.json
-
-# Secrets
-.env.local
-*.pem
-*.secret
-*.keypair
-
-# Logs
-*.log
-logs/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
+# Solana / Anchor
+.anchor/
+target/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
+logs/
+*.log

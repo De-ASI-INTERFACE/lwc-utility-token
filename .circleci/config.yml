@@ -1,0 +1,42 @@
+version: 2.1
+
+orbs:
+  python: circleci/python@2.1.1
+
+jobs:
+  audit:
+    docker:
+      - image: cimg/python:3.11
+    steps:
+      - checkout
+      - python/install-packages:
+          pkg-manager: pip
+          packages: bandit safety flake8
+      - run:
+          name: Lint (flake8)
+          command: flake8 . --max-line-length=120 --exclude=venv,.venv,target
+      - run:
+          name: Security Audit (bandit)
+          command: bandit -r . -x venv,.venv,target -ll
+      - run:
+          name: Dependency Vulnerability Scan (safety)
+          command: safety check -r requirements.txt
+
+  test:
+    docker:
+      - image: cimg/python:3.11
+      - image: cimg/redis:7.0
+    steps:
+      - checkout
+      - python/install-packages:
+          pkg-manager: pip
+          packages: pytest pytest-asyncio aiohttp redis
+      - run:
+          name: Run Tests
+          command: pytest tests/ -v --tb=short
+
+workflows:
+  audit-and-test:
+    jobs:
+      - audit
+      - test
