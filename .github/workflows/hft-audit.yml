@@ -2,9 +2,9 @@ name: LWC Token Solana Audit
 
 on:
   push:
-    branches: [Richy]
+    branches: [main]
   pull_request:
-    branches: [Richy]
+    branches: [main]
 
 jobs:
   audit:
