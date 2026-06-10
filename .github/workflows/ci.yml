@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-type-check:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ruff mypy
+          pip install -e . --quiet 2>/dev/null || pip install -r requirements.txt --quiet 2>/dev/null || true
+      - name: Ruff lint
+        run: ruff check . --output-format=github
+      - name: Mypy type check
+        run: mypy . --ignore-missing-imports
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint-type-check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest pytest-cov
+          pip install -e . --quiet 2>/dev/null || pip install -r requirements.txt --quiet 2>/dev/null || true
+      - name: Run tests
+        run: pytest -v --cov --cov-report=term-missing --cov-fail-under=40
